@@ -11,7 +11,7 @@ __async_pool = None
 __async_results = []
 
 
-def cell_evaluator_mp(individuals, callback_fn, args):
+def cell_evaluator_mp(individuals, callback_fn, args, block):
     """
     Evaluator function will asynchronously dispatch any new individuals
     for evaluation and block while there are outstanding evaluations.
@@ -33,8 +33,6 @@ def cell_evaluator_mp(individuals, callback_fn, args):
     evaluator = get_evaluator(args)
     pickled_args = get_args(args)
 
-    timeout_val = args.setdefault('mp_timeout_fitness', 0)
-
     logger = args['_ec'].logger
 
     for idx, ind in individuals:
@@ -43,31 +41,46 @@ def cell_evaluator_mp(individuals, callback_fn, args):
 
         __async_results.append((idx, ind, res))
 
-    __async_results = list(
-        dispatch_results(callback_fn, __async_results, timeout_val))
+    defered, __async_results = dispatch_results(callback_fn, __async_results, args)
+    [callback_fn(idx, ind) for (idx, ind) in defered]
 
-    while __async_results:
-        time.sleep(0.1)
+    while block and __async_results:
+        logger.debug("Waiting on results from {0}".format(len(__async_results)))
 
-        __async_results = list(
-            dispatch_results(callback_fn, __async_results, timeout_val))
+        time.sleep(0.2)
+
+        defered, __async_results = dispatch_results(callback_fn, __async_results, args)
+        [callback_fn(idx, ind) for (idx, ind) in defered]
 
 
-def dispatch_results(callback_fn, async_results, timeout_val):
+def dispatch_results(callback_fn, async_results, args):
     """Calls the evaluation callback for any asynchronous evaluations which have
     finished processing and returned results.
     """
+
+    timeout_val = args.setdefault('mp_timeout_fitness', 0)
+
+    logger = args['_ec'].logger
+
+    defered = []
+
+    remaining_results = []
+
     for idx, ind, res in list(async_results):
         if res.ready():
             try:
                 ret = res.get(0)[0]
+                logger.debug("Received results from {0} = {1}".format(ind, ret))
                 ind.fitness = ret
             except TimeoutError as e:
+                logger.warning("Timed out getting fitness for {0} ind, setting {1}".format(
+                    ind, timeout_val))
                 ind.fitness = timeout_val
-            callback_fn(idx, ind)
+            defered.append((idx, ind))
         else:
-            yield (idx, ind, res)
+            remaining_results.append((idx, ind, res))
 
+    return defered, remaining_results
 
 
 def get_evaluator(args):

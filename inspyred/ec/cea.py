@@ -57,7 +57,7 @@ def cellular_evaluator(evaluate):
         evaluator=inspyred.ec.cellular_evaluator(problem.evaluator)
     """
     @functools.wraps(evaluate)
-    def cell_evaluator(individuals, callback_fn, args):
+    def cell_evaluator(individuals, callback_fn, args, block):
         candidates = [
             ind.candidate for i, ind in individuals]
 
@@ -91,10 +91,21 @@ class cEA(EvolutionaryComputation):
         self._kwargs = args
         self._kwargs['_ec'] = self
         self._kwargs['maximize'] = maximize
-        
+
         if bounder is None:
             bounder = Bounder()
-        
+
+        self.num_generation_seed = self._kwargs.setdefault(
+            'num_generation_seed', 4)
+
+        self.observe_evaluations = self._kwargs.setdefault(
+            'observe_evaluations', 100)
+
+        self.async_evaluator = self._kwargs.setdefault(
+            'async_evaluator', False)
+
+        self.max_outstanding_individuals = 100
+        self.outstanding_individuals = 0
         self.last_generations = 0
         self.num_evaluations = 0
         self.termination_cause = None
@@ -145,7 +156,8 @@ class cEA(EvolutionaryComputation):
 
         self.evaluator(
             callback_fn=self.init_eval_callback, individuals=[
-                (i, ind) for i, ind in enumerate(self.population)], args=self._kwargs)
+                (i, ind) for i, ind in enumerate(self.population)],
+            args=self._kwargs, block=True)
 
         return self.population
 
@@ -155,7 +167,8 @@ class cEA(EvolutionaryComputation):
 
         self.num_evaluations += 1
 
-        if not [p for p in self.population if p.fitness is None]:
+        outstanding = [p for p in self.population if p.fitness is None]
+        if not outstanding:
             self.logger.debug("Initial population evaluated, starting eval loop")
             self.neighborhood.log_neighborhood(
                 self.population, self.logger, self._kwargs)
@@ -163,26 +176,61 @@ class cEA(EvolutionaryComputation):
 
     def enqueue(self, eval_callback, individuals):
         self._eval_queue[eval_callback] += [(i, ind) for i, ind in enumerate(individuals)]
+        self.logger.debug("Enqueued {0} individuals for evaluation - Total {1} by {2}".format(
+            len(individuals), len(self._eval_queue[eval_callback]), eval_callback))
 
-    def dispatch(self):
-        queue = self._eval_queue
-        self._eval_queue = collections.defaultdict(list)
 
-        for callback, indivs in queue.iteritems():
-            self.evaluator(
-                callback_fn=callback,
-                individuals=indivs,
-                args=self._kwargs)
+    def dispatch(self, block=False):
+        """Dispatches all queued evaluations to the evaluator
+
+        If the block flag is set the evaluator is expected to sit in a loop
+        hitting `callback_fn` until all individuals have been evaluated.
+
+        Otherwise the evaluator should return immediately after initial
+        evaluation and not wait for more individuals to be evaluated.
+        """
+        if block or (
+                self.async_evaluator and self.outstanding_individuals <
+                self.max_outstanding_individuals):
+            queue = self._eval_queue
+            self._eval_queue = collections.defaultdict(list)
+
+            for callback, indivs in queue.iteritems():
+                send_indivs = indivs
+
+                num_to_send = min(
+                    self.max_outstanding_individuals -
+                    self.outstanding_individuals,
+                    1)
+
+                # Only send reasonable chunks out at a time
+                if len(send_indivs) > num_to_send:
+                    requeue = send_indivs[num_to_send:]
+                    send_indivs = send_indivs[:num_to_send]
+
+                    self._eval_queue[callback] = requeue
+
+                self.logger.debug("Dispatching {0} individuals".format(
+                    len(send_indivs)))
+
+                self.evaluator(
+                    callback_fn=callback,
+                    individuals=send_indivs,
+                    args=self._kwargs,
+                    block=block)
+        else:
+            self.logger.debug("Not dispatching {0} {1}".format(
+                block, self.async_evaluator))
 
     def start_eval_loop(self):
         while not self._terminate:
-            self.dispatch()
+            self.dispatch(block=True)
 
             self.logger.debug(
                 "Eval loop came back around, picking a few more to seed")
 
             individuals = []
-            for idx in self._random.sample(range(self.pop_size), 4):
+            for idx in self._random.sample(range(self.pop_size), self.num_generation_seed):
                 ind = self.population[idx]
 
                 individuals.append(ind)
@@ -220,6 +268,9 @@ class cEA(EvolutionaryComputation):
             self.logger.debug('variation using {0} at generation {1} and evaluation {2}'.format(self.variator.__name__, self.num_generations, self.num_evaluations))
             offspring_cs = self.variator(random=self._random, candidates=offspring_cs, args=self._kwargs)
 
+        self.logger.debug("Variation produced {0} offspring".format(
+            len(offspring_cs)))
+
         offspring = []
         for cs in offspring_cs:
             ind = Individual(cs, maximize=self.maximize)
@@ -227,6 +278,7 @@ class cEA(EvolutionaryComputation):
             offspring.append(ind)
 
         self.enqueue(self.replacement_eval_callback, offspring)
+        self.dispatch()
 
     def replacement_eval_callback(self, idx, ind):
         self.logger.debug("Replacement evaluation complete on {0}:{1}".format(
@@ -238,12 +290,10 @@ class cEA(EvolutionaryComputation):
         self.eval_callback(idx, ind)
 
     def check_term(self):
-        if self._terminate:
-            return True
-
         self.num_generations = self.num_evaluations / self.pop_size
 
-        if self.num_generations != self.last_generations:
+        if self.num_generations != self.last_generations or\
+                self.num_evaluations % self.observe_evaluations == 0:
             self.neighborhood.log_neighborhood(
                 self.population, self.logger, self._kwargs)
             if isinstance(self.observer, collections.Iterable):
@@ -255,6 +305,9 @@ class cEA(EvolutionaryComputation):
                 self.observer(population=list(self.population), num_generations=self.num_generations, num_evaluations=self.num_evaluations, args=self._kwargs)
 
             self.last_generations = self.num_generations
+
+        if self._terminate:
+            return True
 
         if self._should_terminate(list(self.population), self.num_generations, self.num_evaluations):
             self.logger.debug("Terminating")
