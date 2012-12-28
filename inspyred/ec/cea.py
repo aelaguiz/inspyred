@@ -242,6 +242,8 @@ class cEA(EvolutionaryComputation):
         self.logger.debug("Evaluation complete on {0}:{1}".format(
             idx, ind))
 
+        self.outstanding_individuals -= 1
+
         self.num_evaluations += 1
 
         self.population[idx] = ind
