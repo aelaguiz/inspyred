@@ -5,6 +5,8 @@ try:
 except ImportError:
     import pickle
 
+from multiprocessing import TimeoutError
+
 __async_pool = None
 __async_results = []
 
@@ -31,6 +33,8 @@ def cell_evaluator_mp(individuals, callback_fn, args):
     evaluator = get_evaluator(args)
     pickled_args = get_args(args)
 
+    timeout_val = args.setdefault('mp_timeout_fitness', 0)
+
     logger = args['_ec'].logger
 
     for idx, ind in individuals:
@@ -39,22 +43,27 @@ def cell_evaluator_mp(individuals, callback_fn, args):
 
         __async_results.append((idx, ind, res))
 
-    __async_results = list(dispatch_results(callback_fn, __async_results))
+    __async_results = list(
+        dispatch_results(callback_fn, __async_results, timeout_val))
 
     while __async_results:
         time.sleep(0.1)
 
-        __async_results = list(dispatch_results(callback_fn, __async_results))
+        __async_results = list(
+            dispatch_results(callback_fn, __async_results, timeout_val))
 
 
-def dispatch_results(callback_fn, async_results):
+def dispatch_results(callback_fn, async_results, timeout_val):
     """Calls the evaluation callback for any asynchronous evaluations which have
     finished processing and returned results.
     """
     for idx, ind, res in list(async_results):
         if res.ready():
-            ret = res.get(0)[0]
-            ind.fitness = ret
+            try:
+                ret = res.get(0)[0]
+                ind.fitness = ret
+            except TimeoutError as e:
+                ind.fitness = timeout_val
             callback_fn(idx, ind)
         else:
             yield (idx, ind, res)
@@ -84,6 +93,14 @@ def get_args(args):
             pass
 
     return pickled_args
+
+
+def set_pool(pool):
+    """Provides a way for injection of a custom process pool
+    """
+    global __async_pool
+
+    __async_pool = pool
 
 
 def init_pool(args):

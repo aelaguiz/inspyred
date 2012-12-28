@@ -95,6 +95,7 @@ class cEA(EvolutionaryComputation):
         if bounder is None:
             bounder = Bounder()
         
+        self.last_generations = 0
         self.num_evaluations = 0
         self.termination_cause = None
         self.generator = generator
@@ -105,7 +106,7 @@ class cEA(EvolutionaryComputation):
         self.archive = []
         self.neighborhood = neighborhood
         self._terminate = False
-        self._eval_queue = []
+        self._eval_queue = collections.defaultdict(list)
 
     def initial_population(self, seeds):
         if seeds is None:
@@ -160,15 +161,22 @@ class cEA(EvolutionaryComputation):
                 self.population, self.logger, self._kwargs)
             self.start_eval_loop()
 
+    def enqueue(self, eval_callback, individuals):
+        self._eval_queue[eval_callback] += [(i, ind) for i, ind in enumerate(individuals)]
+
+    def dispatch(self):
+        queue = self._eval_queue
+        self._eval_queue = collections.defaultdict(list)
+
+        for callback, indivs in queue.iteritems():
+            self.evaluator(
+                callback_fn=callback,
+                individuals=indivs,
+                args=self._kwargs)
+
     def start_eval_loop(self):
         while not self._terminate:
-            while(self._eval_queue):
-                eqi = self._eval_queue.pop(0)
-
-                self.evaluator(
-                    callback_fn=eqi[0],
-                    individuals=eqi[1],
-                    args=self._kwargs)
+            self.dispatch()
 
             self.logger.debug(
                 "Eval loop came back around, picking a few more to seed")
@@ -179,12 +187,7 @@ class cEA(EvolutionaryComputation):
 
                 individuals.append(ind)
 
-            self._eval_queue.append(
-                (
-                    self.eval_callback,
-                    [(i, ind) for i, ind in enumerate(individuals)]
-                )
-            )
+            self.enqueue(self.eval_callback, individuals)
 
 
     def eval_callback(self, idx, ind):
@@ -223,12 +226,7 @@ class cEA(EvolutionaryComputation):
             ind.fitness = None
             offspring.append(ind)
 
-        self._eval_queue.append(
-            (
-                self.replacement_eval_callback,
-                [(idx, ind) for ind in offspring]
-            )
-        )
+        self.enqueue(self.replacement_eval_callback, offspring)
 
     def replacement_eval_callback(self, idx, ind):
         self.logger.debug("Replacement evaluation complete on {0}:{1}".format(
@@ -245,7 +243,7 @@ class cEA(EvolutionaryComputation):
 
         self.num_generations = self.num_evaluations / self.pop_size
 
-        if 0 == self.num_evaluations % self.pop_size:
+        if self.num_generations != self.last_generations:
             self.neighborhood.log_neighborhood(
                 self.population, self.logger, self._kwargs)
             if isinstance(self.observer, collections.Iterable):
@@ -255,6 +253,8 @@ class cEA(EvolutionaryComputation):
             else:
                 self.logger.debug('observation using {0} at generation {1} and evaluation {2}'.format(self.observer.__name__, self.num_generations, self.num_evaluations))
                 self.observer(population=list(self.population), num_generations=self.num_generations, num_evaluations=self.num_evaluations, args=self._kwargs)
+
+            self.last_generations = self.num_generations
 
         if self._should_terminate(list(self.population), self.num_generations, self.num_evaluations):
             self.logger.debug("Terminating")
