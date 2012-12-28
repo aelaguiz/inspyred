@@ -7,6 +7,10 @@ computation, swarm intelligence, and immunocomputing. Additionally, inspyred
 provides easy-to-use canonical versions of many bio-inspired algorithms for 
 users who don't need much customization.
 
+This Fork
+=========
+This fork adds support for cellular EAs to Inspyred.
+
 
 Example
 =======
