@@ -1,3 +1,29 @@
+"""
+    ===================================================
+    :mod:`cea` -- Cellular Evoluationary Algorithm Base
+    ===================================================
+    
+    This module provides the base code for cellular evolutionary computations
+    
+    .. Copyright 2012 Inspired Intelligence Initiative
+
+    .. This program is free software: you can redistribute it and/or modify
+       it under the terms of the GNU General Public License as published by
+       the Free Software Foundation, either version 3 of the License, or
+       (at your option) any later version.
+
+    .. This program is distributed in the hope that it will be useful,
+       but WITHOUT ANY WARRANTY; without even the implied warranty of
+       MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+       GNU General Public License for more details.
+
+    .. You should have received a copy of the GNU General Public License
+       along with this program.  If not, see <http://www.gnu.org/licenses/>.
+       
+    .. module:: cea
+    .. moduleauthor:: Amir Elaguizy <aelaguiz@gmail.com>
+"""
+
 import collections
 import copy
 import functools
@@ -6,6 +32,30 @@ from inspyred.ec import Bounder, EvolutionaryComputation, Individual
 
 
 def cellular_evaluator(evaluate):
+    """Wraps a normal inspyred evaluator and transforms it so that it
+    is suitable for use in a cellular algorithm.
+
+    The biggest change is that it expects full individual objects
+    rather than just candidate objects, it will unwrap them
+    and pass the candidate object through to the underlying evaluator.
+
+    This function should be passed the output of an existing wrapped
+    evaluator, such that it accepts multiple candidates at once::
+    
+        [fitness] = evaluate(candidates, args)
+        
+    It can be used as a decorator in this way:
+
+        @cell_evaluator
+        @evaluator
+        def evaluate(candidate, args):
+            # Implementation of evaluation
+            pass
+
+    It may also be used as an argument to the cea like:
+
+        evaluator=inspyred.ec.cellular_evaluator(problem.evaluator)
+    """
     @functools.wraps(evaluate)
     def cell_evaluator(individuals, callback_fn, args):
         candidates = [
@@ -110,6 +160,7 @@ class cEA(EvolutionaryComputation):
 
             self.logger.debug(
                 "Eval loop came back around, picking a few more to seed")
+
             individuals = []
             for idx in self._random.sample(range(self.pop_size), 4):
                 ind = self.population[idx]
