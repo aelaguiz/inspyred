@@ -22,6 +22,7 @@ def main(prng=None, display=False):
     if display:
         best = max(final_pop)
         print('Best Solution: \n{0}'.format(str(best)))
+        print best.fitness
     return ea
             
 if __name__ == '__main__':

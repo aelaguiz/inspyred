@@ -33,6 +33,8 @@ from inspyred.ec.ec import EvolutionExit
 from inspyred.ec.ec import GA
 from inspyred.ec.ec import Individual
 from inspyred.ec.ec import SA
+from inspyred.ec.cea import cEA
+from inspyred.ec.cea import cellular_evaluator
 import inspyred.ec.analysis
 import inspyred.ec.archivers
 import inspyred.ec.emo
@@ -44,6 +46,7 @@ import inspyred.ec.selectors
 import inspyred.ec.terminators
 import inspyred.ec.utilities
 import inspyred.ec.variators
+import inspyred.ec.neighborhoods
 
 __all__ = ['Bounder', 'DiscreteBounder', 'Individual', 'Error', 'EvolutionExit', 
            'EvolutionaryComputation', 'GA', 'ES', 'EDA', 'DEA', 'SA',
