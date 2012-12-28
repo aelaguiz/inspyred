@@ -223,4 +223,3 @@ def parallel_evaluation_mp(candidates, args):
     else:
         end = time.time()
         logger.debug('completed parallel_evaluation_mp in {0} seconds'.format(end - start))
-        

@@ -1,8 +1,16 @@
 from random import Random
 from time import time
-
 import inspyred
+from inspyred.ec.cea_parallel_evaluator import\
+    cell_evaluator_mp, cell_evaluator_mp_cleanup
 import sys
+import os
+
+
+
+def evaluator(candidates, args):
+    problem = args['problem']
+    return problem.evaluator(candidates, args)
 
 
 def main(prng=None, display=False): 
@@ -21,10 +29,9 @@ def main(prng=None, display=False):
     #logger.addHandler(h1)
     #logger.addHandler(file_handler)
 
-    problem = inspyred.benchmarks.Binary(inspyred.benchmarks.Schwefel(2), 
-                                         dimension_bits=30)
+    problem = inspyred.benchmarks.Ackley(2)
+
     ea = inspyred.ec.cEA(prng)
-    #ea.logger = logger
     ea.terminator = inspyred.ec.terminators.evaluation_termination
 
     ea.variator = [inspyred.ec.variators.n_point_crossover, inspyred.ec.variators.bit_flip_mutation]
@@ -33,9 +40,18 @@ def main(prng=None, display=False):
     final_pop = ea.evolve(
         neighborhood=inspyred.ec.neighborhoods.grid_neighborhood,
         generator=problem.generator,
-        evaluator=inspyred.ec.cellular_evaluator(problem.evaluator),
+
+        evaluator=cell_evaluator_mp,
+
+        mp_evaluator=evaluator, 
+
+        problem=problem,
+
+        mp_num_cpus=8,
+
         nbh_grid_size=10,
         nbh_size=1,
+
         maximize=problem.maximize,
         bounder=problem.bounder,
         max_evaluations=30000, 
@@ -44,8 +60,11 @@ def main(prng=None, display=False):
     if display:
         best = max(final_pop)
         print('Best Solution: \n{0}'.format(str(best)))
+
+ 
+    cell_evaluator_mp_cleanup()
+
     return ea
             
 if __name__ == '__main__':
     main(display=True)
-
