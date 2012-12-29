@@ -198,11 +198,13 @@ class cEA(EvolutionaryComputation):
             for callback, indivs in queue.iteritems():
                 send_indivs = indivs
 
-                num_to_send = min(
+                num_to_send = max(
                     self.max_outstanding_individuals -
                     self.outstanding_individuals,
                     1)
 
+                self.logger.debug("Attempting to dispatch {0}".format(
+                    num_to_send))
                 # Only send reasonable chunks out at a time
                 if len(send_indivs) > num_to_send:
                     requeue = send_indivs[num_to_send:]
@@ -210,8 +212,10 @@ class cEA(EvolutionaryComputation):
 
                     self._eval_queue[callback] = requeue
 
-                self.logger.debug("Dispatching {0} individuals".format(
-                    len(send_indivs)))
+                self.logger.debug("Dispatching {0} individuals {1} outstanding".format(
+                    len(send_indivs), self.outstanding_individuals))
+
+                self.outstanding_individuals += len(send_indivs)
 
                 self.evaluator(
                     callback_fn=callback,
@@ -219,8 +223,8 @@ class cEA(EvolutionaryComputation):
                     args=self._kwargs,
                     block=block)
         else:
-            self.logger.debug("Not dispatching {0} {1}".format(
-                block, self.async_evaluator))
+            self.logger.debug("Not dispatching {0} {1} {2}".format(
+                block, self.async_evaluator, self.outstanding_individuals))
 
     def start_eval_loop(self):
         while not self._terminate:
@@ -239,12 +243,12 @@ class cEA(EvolutionaryComputation):
 
 
     def eval_callback(self, idx, ind):
-        self.logger.debug("Evaluation complete on {0}:{1}".format(
-            idx, ind))
-
         self.outstanding_individuals -= 1
 
         self.num_evaluations += 1
+
+        self.logger.debug("Evaluation complete on {0}:{1} eval # {2} outstanding inds # {3}".format(
+            idx, ind, self.num_evaluations, self.outstanding_individuals))
 
         self.population[idx] = ind
 
