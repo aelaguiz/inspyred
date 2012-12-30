@@ -99,15 +99,10 @@ class cEA(EvolutionaryComputation):
         if bounder is None:
             bounder = Bounder()
 
-        self.num_generation_seed = self._kwargs.setdefault(
-            'num_generation_seed', 4)
-
-        self.observe_evaluations = self._kwargs.setdefault(
-            'observe_evaluations', 100)
-
         self.async_evaluator = self._kwargs.setdefault(
             'async_evaluator', False)
 
+        self.replacements = []
         self.max_outstanding_individuals = 100
         self.outstanding_individuals = 0
         self.last_generations = 0
@@ -136,7 +131,8 @@ class cEA(EvolutionaryComputation):
 
         i = 0
 
-        self.logger.debug('generating initial population')
+        self.logger.debug('generating initial population {0} individuals'.format(
+            self.pop_size))
 
         while i < num_generated:
             cs = self.generator(random=self._random, args=self._kwargs)
@@ -158,7 +154,8 @@ class cEA(EvolutionaryComputation):
         self.population = self.initial_population(seeds)
 
         self.evaluator(
-            callback_fn=self.init_eval_callback, individuals=[
+            callback_fn=self.init_eval_callback,
+            individuals=[
                 (i, ind) for i, ind in enumerate(self.population)],
             args=self._kwargs)
 
@@ -265,30 +262,38 @@ class cEA(EvolutionaryComputation):
             #self.logger.debug(
                 #"Eval loop came back around, picking a few more to reproduce")
 
+            self.make_replacements()
             self.choose_individuals()
             self.show_neighborhood()
 
+    def make_replacements(self):
+        self.logger.info("Applying replacements")
+        for dest_idx, ind in self.replacements:
+            self.population[dest_idx] = ind
 
     def choose_individuals(self):
         individuals = []
 
-        for i in range(self.num_generation_seed):
-            idx = self._random.randint(0, self.pop_size-1)
-
-            self.reproduce(idx, self.population[idx])
+        for idx, ind in enumerate(self.population):
+            self.reproduce(idx, ind)
 
 
     def reproduce(self, idx, ind):
+        if idx == 0:
+            self.next_generation()
+
         self.logger.debug("Reproducing individual {0}:{1}".format(
             idx, ind))
 
         nhbrs = self.neighborhood.get_neighbors(
             self.population, idx, args=self._kwargs)
 
-        parents = [
-            p for p in self.selector(
-                random=self._random,
-                population=nhbrs, args=self._kwargs) if p.fitness is not None]
+        parents = self.selector(
+            random=self._random,
+            population=nhbrs, args=self._kwargs)
+
+        self.logger.debug("Selected {0} parents to reproduce from {1}".format(
+            parents, ind))
 
         parent_cs = [copy.deepcopy(c.candidate) for c in parents]
 
@@ -302,8 +307,8 @@ class cEA(EvolutionaryComputation):
             #self.logger.debug('variation using {0} at generation {1} and evaluation {2}'.format(self.variator.__name__, self.num_generations, self.num_evaluations))
             offspring_cs = self.variator(random=self._random, candidates=offspring_cs, args=self._kwargs)
 
-        #self.logger.debug("Variation produced {0} offspring".format(
-            #len(offspring_cs)))
+        self.logger.debug("Variation produced {0} offspring".format(
+            len(offspring_cs)))
 
         offspring = []
         for cs in offspring_cs:
@@ -319,30 +324,32 @@ class cEA(EvolutionaryComputation):
         self.logger.debug("Replacement evaluation complete on {0}:{1} {2} out".format(
             idx, ind, self.outstanding_individuals))
 
-        self.neighborhood.replace_into_neighborhood(
+        dest_idx = self.neighborhood.get_replacement_dest(
             self.population, idx, ind, self.logger, self._kwargs)
 
+        self.replacements.append((dest_idx, ind))
+
         self.num_evaluations += 1
+
+    def next_generation(self):
+        self.num_generations += 1
+
+        self.logger.info("Neighborhood at generation {0}".format(
+            self.num_generations))
+        self.show_neighborhood()
+
+        if isinstance(self.observer, collections.Iterable):
+            for obs in self.observer:
+                self.logger.debug('observation using {0} at generation {1} and evaluation {2}'.format(obs.__name__, self.num_generations, self.num_evaluations))
+                obs(population=list(self.population), num_generations=self.num_generations, num_evaluations=self.num_evaluations, args=self._kwargs)
+        else:
+            self.logger.debug('observation using {0} at generation {1} and evaluation {2}'.format(self.observer.__name__, self.num_generations, self.num_evaluations))
+            self.observer(population=list(self.population), num_generations=self.num_generations, num_evaluations=self.num_evaluations, args=self._kwargs)
+
 
     def check_term(self):
         if self._terminate:
             return True
-
-        self.num_generations = self.num_evaluations / self.pop_size
-
-        if self.num_generations != self.last_generations or\
-                self.num_evaluations % self.observe_evaluations == 0:
-            self.show_neighborhood()
-
-            if isinstance(self.observer, collections.Iterable):
-                for obs in self.observer:
-                    self.logger.debug('observation using {0} at generation {1} and evaluation {2}'.format(obs.__name__, self.num_generations, self.num_evaluations))
-                    obs(population=list(self.population), num_generations=self.num_generations, num_evaluations=self.num_evaluations, args=self._kwargs)
-            else:
-                self.logger.debug('observation using {0} at generation {1} and evaluation {2}'.format(self.observer.__name__, self.num_generations, self.num_evaluations))
-                self.observer(population=list(self.population), num_generations=self.num_generations, num_evaluations=self.num_evaluations, args=self._kwargs)
-
-            self.last_generations = self.num_generations
 
         if self._should_terminate(list(self.population), self.num_generations, self.num_evaluations):
             self.logger.debug("Terminating")

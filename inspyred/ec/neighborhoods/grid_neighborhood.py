@@ -1,9 +1,7 @@
 import random
 
-print "GOT NEIGHBORHOODS"
 
 def get_pop_size(args):
-    print "GETTING POP SIZE LOL"
     grid_size = args['nbh_grid_size']
     return grid_size ** 2
 
@@ -26,16 +24,25 @@ def _get_neighbors(pop, i, args):
     nhbrs = []
 
     for step in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-        pos = tuple(start_pos)
+        r = start_pos[0]
+        c = start_pos[1]
 
         for j in range(nbh_size):
-            pos = (pos[0] + step[0], pos[1] + step[1])
 
-            if pos[0] < 0 or pos[0] >= grid_size or\
-                    pos[1] < 0 or pos[1] >= grid_size:
-                continue
+            r = r + step[0]
+            c = c + step[1]
 
-            idx = (pos[0] * grid_size) + pos[1]
+            if r < 0:
+                r = grid_size - 1
+            elif r >= grid_size:
+                r = 0
+
+            if c < 0:
+                c = grid_size - 1
+            elif c >= grid_size:
+                c = 0
+
+            idx = (r * grid_size) + c
 
             ind = pop[idx]
             nhbrs.append((idx, ind))
@@ -43,7 +50,7 @@ def _get_neighbors(pop, i, args):
     return nhbrs
 
 
-def replace_into_neighborhood(pop, idx, ind, logger, args):
+def get_replacement_dest(pop, idx, ind, logger, args):
     actual_nhbrs = _get_neighbors(pop, idx, args)
 
     logger.debug("Neighborhood for replacement:\n{0}".format(
@@ -61,13 +68,12 @@ def replace_into_neighborhood(pop, idx, ind, logger, args):
         #[n.fitness for (i, n) in nhbrs]))
 
     # Only replace if we're an improvement or the same
-    if ind >= nhbrs[0][1]:
-        new_idx = nhbrs[0][0]
-        pop[new_idx] = ind
+    #if ind >= nhbrs[0][1]:
+    new_idx = nhbrs[0][0]
 
-        return new_idx
+    return new_idx
 
-    return None
+    #return None
 
 
 def get_neighborhood(population, args, current=None, neighbors=[]):
