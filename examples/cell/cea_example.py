@@ -10,21 +10,21 @@ def main(prng=None, display=False):
         prng = Random()
         prng.seed(time()) 
     
-    #import logging
-    #logger = logging.getLogger('inspyred.ec')
-    #logger.setLevel(logging.DEBUG)
-    #h1 = logging.StreamHandler(sys.stdout)
-    #file_handler = logging.FileHandler('inspyred.log', mode='w')
-    #file_handler.setLevel(logging.DEBUG)
-    #formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    #file_handler.setFormatter(formatter)
-    #logger.addHandler(h1)
-    #logger.addHandler(file_handler)
+    import logging
+    logger = logging.getLogger('inspyred.ec')
+    logger.setLevel(logging.DEBUG)
+    h1 = logging.StreamHandler(sys.stdout)
+    file_handler = logging.FileHandler('inspyred.log', mode='w')
+    file_handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    logger.addHandler(h1)
+    logger.addHandler(file_handler)
 
     problem = inspyred.benchmarks.Binary(inspyred.benchmarks.Schwefel(2), 
                                          dimension_bits=30)
     ea = inspyred.ec.cEA(prng)
-    #ea.logger = logger
+    ea.logger = logger
     ea.terminator = inspyred.ec.terminators.evaluation_termination
 
     ea.variator = [inspyred.ec.variators.n_point_crossover, inspyred.ec.variators.bit_flip_mutation]

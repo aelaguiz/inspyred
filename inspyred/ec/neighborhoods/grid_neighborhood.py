@@ -1,11 +1,18 @@
+import random
+
+print "GOT NEIGHBORHOODS"
+
 def get_pop_size(args):
+    print "GETTING POP SIZE LOL"
     grid_size = args['nbh_grid_size']
     return grid_size ** 2
 
 
 def get_neighbors(pop, i, args):
+    nhbrs = _get_neighbors(pop, i, args)
+
     return [
-        n for i, n in _get_neighbors(pop, i, args)]
+        n for i, n in nhbrs]
 
 
 def _get_neighbors(pop, i, args):
@@ -26,9 +33,9 @@ def _get_neighbors(pop, i, args):
 
             if pos[0] < 0 or pos[0] >= grid_size or\
                     pos[1] < 0 or pos[1] >= grid_size:
-                break
+                continue
 
-            idx = pos[0] * grid_size + pos[1]
+            idx = (pos[0] * grid_size) + pos[1]
 
             ind = pop[idx]
             nhbrs.append((idx, ind))
@@ -36,24 +43,38 @@ def _get_neighbors(pop, i, args):
     return nhbrs
 
 
-def replace_into_neighborhood(pop, idx, ind, args):
-    nhbrs = _get_neighbors(pop, idx, args)
+def replace_into_neighborhood(pop, idx, ind, logger, args):
+    actual_nhbrs = _get_neighbors(pop, idx, args)
 
-    # Strip individuals with no calculated fitness
-    nhbrs = [(i, n) for i, n in nhbrs if n.fitness is not None]
+    logger.debug("Neighborhood for replacement:\n{0}".format(
+        get_neighborhood(
+            pop, args, current=idx, neighbors=[
+                i for (i, n) in actual_nhbrs])))
 
+
+    # if maximizing, sort in ascending order 
+    # lowest fitness at bottom
     nhbrs = sorted(
-        nhbrs, key=lambda n: n[1].fitness, reverse=not args['maximize'])
+        actual_nhbrs, key=lambda n: n[1], reverse=not args['maximize'])
 
-    new_idx = nhbrs[0][0]
-    pop[new_idx] = ind
+    #logger.debug("Fitnesses in sorted order: {0}".format(
+        #[n.fitness for (i, n) in nhbrs]))
 
-    return new_idx
+    # Only replace if we're an improvement or the same
+    if ind >= nhbrs[0][1]:
+        new_idx = nhbrs[0][0]
+        pop[new_idx] = ind
+
+        return new_idx
+
+    return None
 
 
-def log_neighborhood(population, logger, args):
+def get_neighborhood(population, args, current=None, neighbors=[]):
     pos = 0
     grid_size = args['nbh_grid_size']
+
+    ret = ""
 
     for i in range(grid_size):
         row = ""
@@ -65,8 +86,19 @@ def log_neighborhood(population, logger, args):
             if f:
                 f = round(f, 2)
 
-            row += str(f).ljust(12) + " "
+            f = str(f)
+
+            if pos == current:
+                row += ("*" + f + "*").center(8)
+            elif pos in neighbors:
+                row += ("|" + f + "|").center(8)
+            else:
+                row += f.center(8)
+
+            row += " "
 
             pos += 1
 
-        logger.debug(row)
+        ret += row + "\n"
+
+    return ret

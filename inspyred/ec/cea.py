@@ -27,6 +27,7 @@
 import collections
 import copy
 import functools
+import time
 
 from inspyred.ec import Bounder, EvolutionaryComputation, Individual
 
@@ -57,7 +58,10 @@ def cellular_evaluator(evaluate):
         evaluator=inspyred.ec.cellular_evaluator(problem.evaluator)
     """
     @functools.wraps(evaluate)
-    def cell_evaluator(individuals, callback_fn, args, block):
+    def cell_evaluator(individuals, callback_fn, args):
+        print "In evaluator with",\
+            [i for i, ind in individuals]
+
         candidates = [
             ind.candidate for i, ind in individuals]
 
@@ -137,7 +141,6 @@ class cEA(EvolutionaryComputation):
         while i < num_generated:
             cs = self.generator(random=self._random, args=self._kwargs)
             ind = Individual(cs, maximize=self.maximize)
-            ind.fitness = None
 
             initial_cs.append(ind)
             i += 1
@@ -157,41 +160,61 @@ class cEA(EvolutionaryComputation):
         self.evaluator(
             callback_fn=self.init_eval_callback, individuals=[
                 (i, ind) for i, ind in enumerate(self.population)],
-            args=self._kwargs, block=True)
+            args=self._kwargs)
+
+        outstanding = [p for p in self.population if p.fitness is None]
+        while outstanding:
+            #self.logger.debug("Waiting for {0} Initial to evaluate".format(
+                #len(outstanding)))
+
+            time.sleep(0.5)
+            self.evaluator(
+                callback_fn=None, individuals=[], args=self._kwargs)
+            outstanding = [p for p in self.population if p.fitness is None]
+
+        self.logger.debug("Initial population evaluated, starting eval loop")
+        self.show_neighborhood()
+        self.start_reproduce_loop()
 
         return self.population
 
+    def show_neighborhood(self):
+        neighborhood = self.neighborhood.get_neighborhood(
+            self.population, self._kwargs)
+
+        self.logger.info("Neighborhood:\n{0}".format(neighborhood))
+ 
     def init_eval_callback(self, idx, ind):
         self.logger.debug("Initial eval complete for {0} {1} {2}".format(
             idx, ind, ind.fitness))
 
-        self.num_evaluations += 1
-
-        outstanding = [p for p in self.population if p.fitness is None]
-        if not outstanding:
-            self.logger.debug("Initial population evaluated, starting eval loop")
-            self.neighborhood.log_neighborhood(
-                self.population, self.logger, self._kwargs)
-            self.start_eval_loop()
-
     def enqueue(self, eval_callback, individuals):
-        self._eval_queue[eval_callback] += [(i, ind) for i, ind in enumerate(individuals)]
+        self._eval_queue[eval_callback] += [(i, ind) for i, ind in individuals]
         self.logger.debug("Enqueued {0} individuals for evaluation - Total {1} by {2}".format(
             len(individuals), len(self._eval_queue[eval_callback]), eval_callback))
 
 
-    def dispatch(self, block=False):
-        """Dispatches all queued evaluations to the evaluator
-
-        If the block flag is set the evaluator is expected to sit in a loop
-        hitting `callback_fn` until all individuals have been evaluated.
-
-        Otherwise the evaluator should return immediately after initial
-        evaluation and not wait for more individuals to be evaluated.
+    def wait_outstanding(self):
+        """For async evaluators only this blocks until there is enough room
+        on the evaluation queue to insert new individuals
         """
-        if block or (
-                self.async_evaluator and self.outstanding_individuals <
-                self.max_outstanding_individuals):
+        #self.logger.debug("In wait_outstanding")
+        while self.outstanding_individuals > self.max_outstanding_individuals:
+            #self.logger.debug("Waiting to dispatch outstanding {0}".format(
+                #self.outstanding_individuals))
+            time.sleep(0.1)
+            self.evaluator(
+                callback_fn=None, individuals=[], args=self._kwargs)
+
+        #self.logger.debug("Done waiting for outstanding")
+
+    def dispatch(self):
+        """Dispatches all queued evaluations to the evaluator
+        """
+
+        if self.async_evaluator:
+            self.wait_outstanding()
+
             queue = self._eval_queue
             self._eval_queue = collections.defaultdict(list)
 
@@ -210,7 +233,7 @@ class cEA(EvolutionaryComputation):
                     requeue = send_indivs[num_to_send:]
                     send_indivs = send_indivs[:num_to_send]
 
-                    self._eval_queue[callback] = requeue
+                    self._eval_queue[callback] += requeue
 
                 self.logger.debug("Dispatching {0} individuals {1} outstanding".format(
                     len(send_indivs), self.outstanding_individuals))
@@ -220,42 +243,47 @@ class cEA(EvolutionaryComputation):
                 self.evaluator(
                     callback_fn=callback,
                     individuals=send_indivs,
-                    args=self._kwargs,
-                    block=block)
+                    args=self._kwargs)
         else:
-            self.logger.debug("Not dispatching {0} {1} {2}".format(
-                block, self.async_evaluator, self.outstanding_individuals))
+            queue = self._eval_queue
+            self._eval_queue = collections.defaultdict(list)
 
-    def start_eval_loop(self):
-        while not self._terminate:
-            self.dispatch(block=True)
+            for callback, indivs in queue.iteritems():
+                self.outstanding_individuals += len(indivs)
 
-            self.logger.debug(
-                "Eval loop came back around, picking a few more to seed")
+                self.evaluator(
+                    callback_fn=callback,
+                    individuals=indivs,
+                    args=self._kwargs)
+            #self.logger.debug("Not dispatching {0} {1}".format(
+                #self.async_evaluator, self.outstanding_individuals))
 
-            individuals = []
-            for idx in self._random.sample(range(self.pop_size), self.num_generation_seed):
-                ind = self.population[idx]
+    def start_reproduce_loop(self):
+        while not self.check_term():
+            self.dispatch()
 
-                individuals.append(ind)
+            #self.logger.debug(
+                #"Eval loop came back around, picking a few more to reproduce")
 
-            self.enqueue(self.eval_callback, individuals)
+            self.choose_individuals()
+            self.show_neighborhood()
 
 
-    def eval_callback(self, idx, ind):
-        self.outstanding_individuals -= 1
+    def choose_individuals(self):
+        individuals = []
 
-        self.num_evaluations += 1
+        for i in range(self.num_generation_seed):
+            idx = self._random.randint(0, self.pop_size-1)
 
-        self.logger.debug("Evaluation complete on {0}:{1} eval # {2} outstanding inds # {3}".format(
-            idx, ind, self.num_evaluations, self.outstanding_individuals))
+            self.reproduce(idx, self.population[idx])
 
-        self.population[idx] = ind
 
-        if self.check_term():
-            return
+    def reproduce(self, idx, ind):
+        self.logger.debug("Reproducing individual {0}:{1}".format(
+            idx, ind))
 
-        nhbrs = self.neighborhood.get_neighbors(self.population, idx, args=self._kwargs)
+        nhbrs = self.neighborhood.get_neighbors(
+            self.population, idx, args=self._kwargs)
 
         parents = [
             p for p in self.selector(
@@ -268,40 +296,44 @@ class cEA(EvolutionaryComputation):
         
         if isinstance(self.variator, collections.Iterable):
             for op in self.variator:
-                self.logger.debug('variation using {0} at generation {1} and evaluation {2}'.format(op.__name__, self.num_generations, self.num_evaluations))
+                #self.logger.debug('variation using {0} at generation {1} and evaluation {2}'.format(op.__name__, self.num_generations, self.num_evaluations))
                 offspring_cs = op(random=self._random, candidates=offspring_cs, args=self._kwargs)
         else:
-            self.logger.debug('variation using {0} at generation {1} and evaluation {2}'.format(self.variator.__name__, self.num_generations, self.num_evaluations))
+            #self.logger.debug('variation using {0} at generation {1} and evaluation {2}'.format(self.variator.__name__, self.num_generations, self.num_evaluations))
             offspring_cs = self.variator(random=self._random, candidates=offspring_cs, args=self._kwargs)
 
-        self.logger.debug("Variation produced {0} offspring".format(
-            len(offspring_cs)))
+        #self.logger.debug("Variation produced {0} offspring".format(
+            #len(offspring_cs)))
 
         offspring = []
         for cs in offspring_cs:
             ind = Individual(cs, maximize=self.maximize)
-            ind.fitness = None
-            offspring.append(ind)
+            offspring.append((idx, ind))
 
         self.enqueue(self.replacement_eval_callback, offspring)
         self.dispatch()
 
     def replacement_eval_callback(self, idx, ind):
-        self.logger.debug("Replacement evaluation complete on {0}:{1}".format(
-            idx, ind))
+        self.outstanding_individuals -= 1
 
-        idx = self.neighborhood.replace_into_neighborhood(
-            self.population, idx, ind, self._kwargs)
+        self.logger.debug("Replacement evaluation complete on {0}:{1} {2} out".format(
+            idx, ind, self.outstanding_individuals))
 
-        self.eval_callback(idx, ind)
+        self.neighborhood.replace_into_neighborhood(
+            self.population, idx, ind, self.logger, self._kwargs)
+
+        self.num_evaluations += 1
 
     def check_term(self):
+        if self._terminate:
+            return True
+
         self.num_generations = self.num_evaluations / self.pop_size
 
         if self.num_generations != self.last_generations or\
                 self.num_evaluations % self.observe_evaluations == 0:
-            self.neighborhood.log_neighborhood(
-                self.population, self.logger, self._kwargs)
+            self.show_neighborhood()
+
             if isinstance(self.observer, collections.Iterable):
                 for obs in self.observer:
                     self.logger.debug('observation using {0} at generation {1} and evaluation {2}'.format(obs.__name__, self.num_generations, self.num_evaluations))
@@ -311,9 +343,6 @@ class cEA(EvolutionaryComputation):
                 self.observer(population=list(self.population), num_generations=self.num_generations, num_evaluations=self.num_evaluations, args=self._kwargs)
 
             self.last_generations = self.num_generations
-
-        if self._terminate:
-            return True
 
         if self._should_terminate(list(self.population), self.num_generations, self.num_evaluations):
             self.logger.debug("Terminating")

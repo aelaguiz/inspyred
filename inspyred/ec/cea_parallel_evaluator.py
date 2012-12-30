@@ -11,7 +11,7 @@ __async_pool = None
 __async_results = []
 
 
-def cell_evaluator_mp(individuals, callback_fn, args, block):
+def cell_evaluator_mp(individuals, callback_fn, args):
     """
     Evaluator function will asynchronously dispatch any new individuals
     for evaluation and block while there are outstanding evaluations.
@@ -31,29 +31,34 @@ def cell_evaluator_mp(individuals, callback_fn, args, block):
         init_pool(args)
 
     evaluator = get_evaluator(args)
-    pickled_args = get_args(args)
-
     logger = args['_ec'].logger
 
-    for idx, ind in individuals:
-        res = __async_pool.apply_async(
-            evaluator, ([ind.candidate], pickled_args))
+    if individuals:
+        pickled_args = get_args(args)
 
-        __async_results.append((idx, ind, res))
+        print "Dispatching", individuals
 
-    defered, __async_results = dispatch_results(callback_fn, __async_results, args)
-    [callback_fn(idx, ind) for (idx, ind) in defered]
+        for idx, ind in individuals:
+            res = __async_pool.apply_async(
+                evaluator, ([ind.candidate], pickled_args))
 
-    while block and __async_results:
-        logger.debug("Waiting on results from {0}".format(len(__async_results)))
+            logger.debug("Dispatching {0} for evaluation".format(
+                ind))
+            __async_results.append((idx, callback_fn, ind, res))
 
-        time.sleep(0.2)
+    defered, __async_results = dispatch_results(__async_results, args)
+    [callback_fn(idx, ind) for (idx, callback_fn, ind) in defered]
 
-        defered, __async_results = dispatch_results(callback_fn, __async_results, args)
-        [callback_fn(idx, ind) for (idx, ind) in defered]
+    #while block and __async_results:
+        #logger.debug("Waiting on results from {0}".format(len(__async_results)))
+
+        #time.sleep(0.2)
+
+        #defered, __async_results = dispatch_results(callback_fn, __async_results, args)
+        #[callback_fn(idx, ind) for (idx, ind) in defered]
 
 
-def dispatch_results(callback_fn, async_results, args):
+def dispatch_results(async_results, args):
     """Calls the evaluation callback for any asynchronous evaluations which have
     finished processing and returned results.
     """
@@ -66,7 +71,7 @@ def dispatch_results(callback_fn, async_results, args):
 
     remaining_results = []
 
-    for idx, ind, res in list(async_results):
+    for idx, callback_fn, ind, res in list(async_results):
         if res.ready():
             try:
                 ret = res.get(0)[0]
@@ -76,9 +81,9 @@ def dispatch_results(callback_fn, async_results, args):
                 logger.warning("Timed out getting fitness for {0} ind, setting {1}".format(
                     ind, timeout_val))
                 ind.fitness = timeout_val
-            defered.append((idx, ind))
+            defered.append((idx, callback_fn, ind))
         else:
-            remaining_results.append((idx, ind, res))
+            remaining_results.append((idx, callback_fn, ind, res))
 
     return defered, remaining_results
 
