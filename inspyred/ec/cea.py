@@ -102,8 +102,10 @@ class cEA(EvolutionaryComputation):
         self.async_evaluator = self._kwargs.setdefault(
             'async_evaluator', False)
 
+        self.max_outstanding_individuals = self._kwargs.setdefault(
+            'max_outstanding_individuals', 100)
+
         self.replacements = []
-        self.max_outstanding_individuals = 100
         self.outstanding_individuals = 0
         self.last_generations = 0
         self.num_evaluations = 0
