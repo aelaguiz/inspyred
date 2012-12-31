@@ -13,12 +13,12 @@ def main(prng=None, display=False):
     import logging
     logger = logging.getLogger('inspyred.ec')
     logger.setLevel(logging.DEBUG)
-    h1 = logging.StreamHandler(sys.stdout)
+    #h1 = logging.StreamHandler(sys.stdout)
     file_handler = logging.FileHandler('inspyred.log', mode='w')
     file_handler.setLevel(logging.DEBUG)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     file_handler.setFormatter(formatter)
-    logger.addHandler(h1)
+    #logger.addHandler(h1)
     logger.addHandler(file_handler)
 
     problem = inspyred.benchmarks.Binary(inspyred.benchmarks.Schwefel(2), 

@@ -103,7 +103,7 @@ class cEA(EvolutionaryComputation):
             'async_evaluator', False)
 
         self.max_outstanding_individuals = self._kwargs.setdefault(
-            'max_outstanding_individuals', 100)
+            'max_outstanding_individuals', pop_size / 2)
 
         self.offspring = []
         self.outstanding_individuals = 0
@@ -150,7 +150,7 @@ class cEA(EvolutionaryComputation):
         self.pop_size = neighborhood.get_pop_size(args)
 
         self.init(
-            generator, evaluator, pop_size, seeds, maximize, bounder,
+            generator, evaluator, self.pop_size, seeds, maximize, bounder,
             neighborhood, **args)
 
         self.population = self.initial_population(seeds)
@@ -184,8 +184,8 @@ class cEA(EvolutionaryComputation):
         self.logger.info("Neighborhood:\n{0}".format(neighborhood))
  
     def init_eval_callback(self, idx, ind):
-        self.logger.debug("Initial eval complete for {0} {1} {2}".format(
-            idx, ind, ind.fitness))
+        self.logger.debug("Initial eval complete for {0} {1}".format(
+            idx, ind.fitness))
 
     def enqueue(self, eval_callback, individuals):
         self._eval_queue[eval_callback] += [(i, ind) for i, ind in individuals]
@@ -266,7 +266,6 @@ class cEA(EvolutionaryComputation):
 
             self.make_replacements()
             self.choose_individuals()
-            self.show_neighborhood()
 
     def make_replacements(self):
         self.logger.info("Applying replacements")
@@ -292,7 +291,7 @@ class cEA(EvolutionaryComputation):
             self.next_generation()
 
         self.logger.debug("Reproducing individual {0}:{1}".format(
-            idx, ind))
+            idx, ind.fitness))
 
         nhbrs = self.neighborhood.get_neighbors(
             self.population, idx, args=self._kwargs)
@@ -300,9 +299,6 @@ class cEA(EvolutionaryComputation):
         parents = self.selector(
             random=self._random,
             population=nhbrs, args=self._kwargs)
-
-        self.logger.debug("Selected {0} parents to reproduce from {1}".format(
-            parents, ind))
 
         parent_cs = [copy.deepcopy(c.candidate) for c in parents]
 
@@ -321,6 +317,9 @@ class cEA(EvolutionaryComputation):
 
         offspring = []
         for cs in offspring_cs:
+            if cs == parent_cs:
+                continue
+
             ind = Individual(cs, maximize=self.maximize)
             offspring.append((idx, ind))
 
@@ -350,6 +349,12 @@ class cEA(EvolutionaryComputation):
         else:
             self.logger.debug('observation using {0} at generation {1} and evaluation {2}'.format(self.observer.__name__, self.num_generations, self.num_evaluations))
             self.observer(population=list(self.population), num_generations=self.num_generations, num_evaluations=self.num_evaluations, args=self._kwargs)
+
+        # Archive individuals.
+        self.logger.debug('archival using {0} at generation {1} and evaluation {2}'.format(self.archiver.__name__, self.num_generations, self.num_evaluations))
+        self.archive = self.archiver(random=self._random, archive=self.archive, population=list(self.population), args=self._kwargs)
+        self.logger.debug('archive size is now {0}'.format(len(self.archive)))
+        self.logger.debug('population size is now {0}'.format(len(self.population)))
 
 
     def check_term(self):
