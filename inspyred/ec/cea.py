@@ -105,7 +105,7 @@ class cEA(EvolutionaryComputation):
         self.max_outstanding_individuals = self._kwargs.setdefault(
             'max_outstanding_individuals', 100)
 
-        self.replacements = []
+        self.offspring = []
         self.outstanding_individuals = 0
         self.last_generations = 0
         self.num_evaluations = 0
@@ -254,8 +254,8 @@ class cEA(EvolutionaryComputation):
                     callback_fn=callback,
                     individuals=indivs,
                     args=self._kwargs)
-            #self.logger.debug("Not dispatching {0} {1}".format(
-                #self.async_evaluator, self.outstanding_individuals))
+            self.logger.debug("Not dispatching {0} {1}".format(
+                self.async_evaluator, self.outstanding_individuals))
 
     def start_reproduce_loop(self):
         while not self.check_term():
@@ -270,14 +270,21 @@ class cEA(EvolutionaryComputation):
 
     def make_replacements(self):
         self.logger.info("Applying replacements")
-        for dest_idx, ind in self.replacements:
+
+        for idx, ind in self.offspring:
+            dest_idx = self.neighborhood.get_replacement_dest(
+                self.population, idx, ind, self.logger, self._kwargs)
+
             self.population[dest_idx] = ind
+
 
     def choose_individuals(self):
         individuals = []
 
         for idx, ind in enumerate(self.population):
             self.reproduce(idx, ind)
+
+        self.dispatch()
 
 
     def reproduce(self, idx, ind):
@@ -317,19 +324,15 @@ class cEA(EvolutionaryComputation):
             ind = Individual(cs, maximize=self.maximize)
             offspring.append((idx, ind))
 
-        self.enqueue(self.replacement_eval_callback, offspring)
-        self.dispatch()
+        self.enqueue(self.offspring_eval_callback, offspring)
 
-    def replacement_eval_callback(self, idx, ind):
+    def offspring_eval_callback(self, idx, ind):
         self.outstanding_individuals -= 1
 
-        self.logger.debug("Replacement evaluation complete on {0}:{1} {2} out".format(
+        self.logger.debug("Offspring evaluation complete on {0}:{1} {2} out".format(
             idx, ind, self.outstanding_individuals))
 
-        dest_idx = self.neighborhood.get_replacement_dest(
-            self.population, idx, ind, self.logger, self._kwargs)
-
-        self.replacements.append((dest_idx, ind))
+        self.offspring.append((idx, ind))
 
         self.num_evaluations += 1
 

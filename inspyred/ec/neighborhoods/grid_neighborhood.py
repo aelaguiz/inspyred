@@ -53,10 +53,10 @@ def _get_neighbors(pop, i, args):
 def get_replacement_dest(pop, idx, ind, logger, args):
     actual_nhbrs = _get_neighbors(pop, idx, args)
 
-    logger.debug("Neighborhood for replacement:\n{0}".format(
-        get_neighborhood(
-            pop, args, current=idx, neighbors=[
-                i for (i, n) in actual_nhbrs])))
+    #logger.debug("Neighborhood for replacement:\n{0}".format(
+        #get_neighborhood(
+            #pop, args, current=idx, neighbors=[
+                #i for (i, n) in actual_nhbrs])))
 
 
     # if maximizing, sort in ascending order 
