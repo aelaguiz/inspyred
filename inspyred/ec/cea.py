@@ -199,13 +199,36 @@ class cEA(EvolutionaryComputation):
         """
         #self.logger.debug("In wait_outstanding")
         while self.outstanding_individuals > self.max_outstanding_individuals:
-            #self.logger.debug("Waiting to dispatch outstanding {0}".format(
-                #self.outstanding_individuals))
-            time.sleep(0.1)
-            self.evaluator(
-                callback_fn=None, individuals=[], args=self._kwargs)
+            self.logger.debug("Waiting to dispatch outstanding {0}".format(
+                self.outstanding_individuals))
+            time.sleep(0.5)
+            self.collect_results()
 
         #self.logger.debug("Done waiting for outstanding")
+
+    def wait_total_queue(self):
+        """
+        Wait until the total evaluation queue goes down before continuing
+        """
+        self.logger.debug("Waiting for the queue to go down...")
+        while self.get_queue_length() > (self.max_outstanding_individuals * 2):
+            self.logger.debug("Waiting for queue to go down {0}".format(
+                self.get_queue_length()))
+            time.sleep(0.5)
+
+            self.dispatch()
+
+    def collect_results(self):
+        self.evaluator(
+            callback_fn=None, individuals=[], args=self._kwargs)
+
+    def get_queue_length(self):
+        total_len = 0
+
+        for callback, indivs in self._eval_queue.iteritems():
+            total_len += len(indivs)
+
+        return total_len
 
     def dispatch(self):
         """Dispatches all queued evaluations to the evaluator
@@ -265,6 +288,7 @@ class cEA(EvolutionaryComputation):
                 #"Eval loop came back around, picking a few more to reproduce")
 
             self.make_replacements()
+            self.wait_total_queue()
             self.choose_individuals()
 
     def make_replacements(self):
